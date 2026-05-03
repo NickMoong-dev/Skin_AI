@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isManager() {
+      return isSignedIn() && (
+        getUserData(request.auth.uid).role == 'manager' || 
+        request.auth.token.email == 'dkelwprnr@gmail.com'
+      );
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role']) &&
+             data.keys().size() <= 4 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.role in ['staff', 'manager'] &&
+             (data.get('displayName', '') is string && data.get('displayName', '').size() <= 128);
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() <= 64 &&
+             (data.get('areas', []).size() <= 20) &&
+             (data.get('defaultChecklist', []).size() <= 50);
+    }
+
+    function isValidComparison(data) {
+      return data.keys().hasAll(['staffId', 'category', 'beforeImages', 'afterImage', 'createdAt']) &&
+             data.staffId == request.auth.uid &&
+             data.category is string && data.category.size() <= 64 &&
+             data.beforeImages is list && data.beforeImages.size() > 0 && data.beforeImages.size() <= 10 &&
+             data.afterImage is string && data.afterImage.size() <= 1024 &&
+             data.createdAt == request.time &&
+             (data.get('area', '') is string && data.get('area', '').size() <= 64) &&
+             (data.get('aiFeedback', '') is string && data.get('aiFeedback', '').size() <= 5000);
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isManager();
+      allow list: if isManager();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'staff'; // Default role
+      allow update: if (isOwner(userId) || isManager()) && 
+                    isValidUser(incoming()) &&
+                    (isManager() || incoming().role == existing().role); // Staff cannot change role
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isManager() && isValidCategory(incoming()) && isValidId(categoryId);
+    }
+
+    match /comparisons/{comparisonId} {
+      allow get: if isSignedIn() && (isOwner(existing().staffId) || isManager());
+      allow list: if isSignedIn() && (request.query.limit <= 50) && (isManager() || resource.data.staffId == request.auth.uid);
+      allow create: if isSignedIn() && isValidComparison(incoming()) && isValidId(comparisonId);
+      allow update: if isManager() && isValidComparison(incoming()); // Only managers might edit feedback/status
+      allow delete: if isManager();
+    }
+  }
+}

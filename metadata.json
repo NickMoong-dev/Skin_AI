@@ -1,0 +1,12 @@
+{
+  "name": "StaffFlow Pro",
+  "description": "직원 업무 성과 관리 및 운영 표준 준수 모니터링 시스템",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "AI Vision Analysis",
+    "Before & After Comparison",
+    "Staff & Manager Management"
+  ]
+}

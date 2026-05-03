@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isManager() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserData(request.auth.uid).role == 'manager';
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.keys().size() >= 3 &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['staff', 'manager'] &&
+             (data.uid == request.auth.uid || isManager());
+    }
+
+    function isValidComparison(data) {
+      return data.keys().hasAll(['staffId', 'staffEmail', 'zone', 'category', 'area', 'checklist', 'afterImage', 'createdAt', 'status']) &&
+             data.staffId is string &&
+             data.staffId == request.auth.uid &&
+             data.staffId.size() <= 128 &&
+             data.staffEmail is string &&
+             data.afterImage is string &&
+             data.afterImage.size() < 1048576 && // 1MB Limit for Firestore Document
+             data.afterImage.matches('^data:image/.*') && // Image format integrity
+             data.createdAt == request.time; // Temporal Integrity (Server Time)
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['userId', 'userEmail', 'userName', 'type', 'timestamp']) &&
+             data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.type in ['clock_in', 'clock_out'] &&
+             data.timestamp == request.time; // Temporal Integrity (Server Time)
+    }
+
+    // --- Business Logic ---
+    
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isManager());
+      // Allow initial creation of profile with any role (Staff or Manager)
+      allow create: if isSignedIn() && isOwner(userId) && (incoming().uid == request.auth.uid);
+      // Allow updates only to non-role fields for owners, or anything for managers
+      allow update: if isSignedIn() && (
+        isManager() || 
+        (isOwner(userId) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'team', 'photoURL']) && 
+         incoming().role == existing().role)
+      );
+      allow delete: if isManager();
+    }
+
+    match /comparisons/{comparisonId} {
+      allow list: if isSignedIn() && (isManager() || (resource.data.staffId == request.auth.uid));
+      allow get: if isSignedIn() && (isManager() || (resource.data.staffId == request.auth.uid));
+      
+      allow create: if isSignedIn() && (incoming().staffId == request.auth.uid || isManager()) && isValidComparison(incoming());
+      
+      allow update: if isSignedIn() && (
+        isManager() || 
+        (resource.data.staffId == request.auth.uid && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['zone', 'area', 'checklist', 'status', 'achievementScore', 'aiFeedback', 'subject']) &&
+         incoming().staffId == existing().staffId)
+      );
+      
+      allow delete: if isManager();
+    }
+
+    match /attendance/{recordId} {
+      allow list: if isSignedIn() && (isManager() || resource.data.userId == request.auth.uid);
+      allow get: if isSignedIn() && (isManager() || resource.data.userId == request.auth.uid);
+      
+      allow create: if isSignedIn() && (isManager() || incoming().userId == request.auth.uid) && isValidAttendance(incoming());
+      allow update, delete: if isManager();
+    }
+  }
+}

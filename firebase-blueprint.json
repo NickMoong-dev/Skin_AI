@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Staff or Manager user profile",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["staff", "manager"] },
+        "displayName": { "type": "string" },
+        "team": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Main tab categories and their check items",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "areas": { "type": "array", "items": { "type": "string" } },
+        "defaultChecklist": { "type": "array", "items": { "type": "string" } },
+        "order": { "type": "number" }
+      },
+      "required": ["name"]
+    },
+    "Comparison": {
+      "title": "Comparison",
+      "description": "Before and After image analysis record",
+      "type": "object",
+      "properties": {
+        "staffId": { "type": "string" },
+        "staffEmail": { "type": "string" },
+        "zone": { "type": "string" },
+        "category": { "type": "string" },
+        "area": { "type": "string" },
+        "checklist": { "type": "object" },
+        "beforeImages": { "type": "array", "items": { "type": "string" } },
+        "afterImage": { "type": "string" },
+        "aiFeedback": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["staffId", "category", "beforeImages", "afterImage"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Clock in/out records for staff",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string", "enum": ["clock_in", "clock_out"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles with roles"
+    },
+    "/attendance/{recordId}": {
+      "schema": "Attendance",
+      "description": "Attendance history"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Configuration for clinic areas and checklists"
+    },
+    "/comparisons/{comparisonId}": {
+      "schema": "Comparison",
+      "description": "Before/After records and AI analysis"
+    }
+  }
+}
